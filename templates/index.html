@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bash Script Web Chat</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Bash Script Runner</h1>
+    <div class="user-line">
+        <span>{% if auth_enabled %}Signed in as{% else %}User{% endif %}: <strong>{{ user.name or client_username }}</strong></span>
+        {% if auth_enabled %}
+        <a href="/logout">Sign out</a>
+        {% endif %}
+    </div>
+    <p class="welcome">Choose a script, run it, then answer the prompts.</p>
+
+    <div class="script-picker">
+        <label for="scriptSelect">Script</label>
+        <select id="scriptSelect">
+            {% for script in scripts %}
+            <option value="{{ script.id }}">
+                {{ script.name }}
+            </option>
+            {% endfor %}
+        </select>
+
+        <label for="parameterInput">Parameters</label>
+        <input id="parameterInput" type="text" placeholder='Example: -b 126.25.25.125' autocomplete="off">
+    </div>
+
+    <div class="toolbar">
+        <button id="runBtn">Run Script</button>
+        <button id="stopBtn" type="button" class="danger" disabled>Stop Script</button>
+        <button id="copyOutputBtn" type="button" disabled>Copy Output</button>
+    </div>
+
+    <div id="chatBox" class="chat-box"></div>
+
+    <div id="inputArea" class="input-area hidden">
+        <input id="answerInput" type="text" placeholder="Type your answer..." autocomplete="off">
+        <button id="sendBtn">Send</button>
+    </div>
+
+    <div id="finalArea" class="final-area hidden">
+        <button id="acceptBtn">Accept Final Output</button>
+    </div>
+</div>
+
+<script>
+let sessionId = null;
+let finished = false;
+let pollTimer = null;
+let outputLines = [];
+let currentScriptBlock = null;
+let scripts = {{ scripts|tojson }};
+const responseSeparator = "================================================================================";
+
+const runBtn = document.getElementById("runBtn");
+const stopBtn = document.getElementById("stopBtn");
+const scriptSelect = document.getElementById("scriptSelect");
+const parameterInput = document.getElementById("parameterInput");
+const copyOutputBtn = document.getElementById("copyOutputBtn");
+const chatBox = document.getElementById("chatBox");
+const inputArea = document.getElementById("inputArea");
+const answerInput = document.getElementById("answerInput");
+const sendBtn = document.getElementById("sendBtn");
+const finalArea = document.getElementById("finalArea");
+const acceptBtn = document.getElementById("acceptBtn");
+
+function renderScripts() {
+    scriptSelect.innerHTML = "";
+
+    scripts.forEach(script => {
+        const option = document.createElement("option");
+        option.value = script.id;
+        option.innerText = script.name;
+        scriptSelect.appendChild(option);
+    });
+
+    const hasScripts = scripts.length > 0;
+    runBtn.disabled = !hasScripts;
+    scriptSelect.disabled = !hasScripts;
+    parameterInput.disabled = !hasScripts;
+}
+
+async function loadScripts() {
+    try {
+        const res = await fetch("/scripts");
+        const data = await res.json();
+        scripts = data.scripts || [];
+        renderScripts();
+    } catch (error) {
+        addMessage("Unable to load scripts list.", "system");
+    }
+}
+
+function createScriptBlock() {
+    const div = document.createElement("div");
+    div.className = "message script";
+    div.dataset.copyText = "";
+
+    const content = document.createElement("div");
+    content.className = "message-content";
+    div.appendChild(content);
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "copy-response";
+    copyBtn.innerText = "Copy";
+    copyBtn.addEventListener("click", function() {
+        copyText(div.dataset.copyText, copyBtn);
+    });
+    div.appendChild(copyBtn);
+
+    chatBox.appendChild(div);
+    return div;
+}
+
+function appendScriptText(text) {
+    if (!currentScriptBlock) {
+        text = text.replace(/^\s+/, "");
+        if (!text) return;
+        currentScriptBlock = createScriptBlock();
+    }
+
+    const existingText = currentScriptBlock.dataset.copyText;
+    const nextText = existingText + text;
+    currentScriptBlock.dataset.copyText = nextText;
+    currentScriptBlock.querySelector(".message-content").innerText = nextText;
+
+    outputLines.push(text);
+    copyOutputBtn.disabled = outputLines.length === 0;
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function addMessage(text, who = "script") {
+    if (text === "__SCRIPT_FINISHED__") return;
+
+    if (who === "script") {
+        const parts = text.split(responseSeparator);
+
+        parts.forEach((part, index) => {
+            if (index > 0) {
+                currentScriptBlock = null;
+                part = part.replace(/^\s+/, "");
+            }
+
+            appendScriptText(part);
+        });
+
+        if (parts.length > 1 && !parts[parts.length - 1].trim()) {
+            currentScriptBlock = null;
+        }
+        return;
+    }
+
+    currentScriptBlock = null;
+
+    const div = document.createElement("div");
+    div.className = "message " + who;
+    div.innerText = text;
+
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function handleMessages(messages) {
+    messages.forEach(msg => {
+        if (msg !== "__SCRIPT_FINISHED__") {
+            addMessage(msg, "script");
+        }
+    });
+}
+
+function handleFinished(isFinished, exitCode) {
+    if (isFinished && !finished) {
+        finished = true;
+        inputArea.classList.add("hidden");
+        finalArea.classList.remove("hidden");
+        addMessage("Script finished.");
+        runBtn.disabled = false;
+        stopBtn.disabled = true;
+        scriptSelect.disabled = false;
+        parameterInput.disabled = false;
+
+        if (pollTimer) {
+            clearInterval(pollTimer);
+        }
+    }
+}
+
+async function startScript() {
+    chatBox.innerHTML = "";
+    outputLines = [];
+    currentScriptBlock = null;
+    copyOutputBtn.disabled = true;
+    finalArea.classList.add("hidden");
+    acceptBtn.disabled = false;
+    finished = false;
+    const scriptId = scriptSelect.value;
+    const parameters = parameterInput.value;
+
+    const res = await fetch("/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script_id: scriptId, parameters })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        addMessage(data.error || "Unable to start script.", "system");
+        return;
+    }
+
+    sessionId = data.session_id;
+    runBtn.disabled = true;
+    stopBtn.disabled = false;
+    scriptSelect.disabled = true;
+    parameterInput.disabled = true;
+    inputArea.classList.remove("hidden");
+    answerInput.focus();
+
+    handleMessages(data.messages);
+    handleFinished(data.finished, data.exit_code);
+
+    pollTimer = setInterval(pollOutput, 500);
+}
+
+async function sendAnswer() {
+    const answer = answerInput.value.trim();
+    if (!answer || !sessionId || finished) return;
+
+    currentScriptBlock = null;
+    addMessage(answer, "user");
+    answerInput.value = "";
+
+    const res = await fetch("/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, answer })
+    });
+
+    const data = await res.json();
+    handleMessages(data.messages);
+    handleFinished(data.finished, data.exit_code);
+}
+
+async function pollOutput() {
+    if (!sessionId || finished) return;
+
+    const res = await fetch(`/poll/${sessionId}`);
+    const data = await res.json();
+
+    handleMessages(data.messages);
+    handleFinished(data.finished, data.exit_code);
+}
+
+async function stopScript() {
+    if (!sessionId || finished) return;
+
+    stopBtn.disabled = true;
+
+    const res = await fetch("/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+        addMessage(data.error || "Unable to stop script.", "system");
+        stopBtn.disabled = false;
+        return;
+    }
+
+    handleMessages(data.messages || []);
+    finished = true;
+    currentScriptBlock = null;
+    inputArea.classList.add("hidden");
+    finalArea.classList.add("hidden");
+    runBtn.disabled = false;
+    scriptSelect.disabled = false;
+    parameterInput.disabled = false;
+    addMessage("Script stopped.", "system");
+
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
+async function acceptFinalOutput() {
+    const res = await fetch("/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+    });
+
+    const data = await res.json();
+
+    if (data.accepted) {
+        addMessage("Final output accepted");
+        acceptBtn.disabled = true;
+    }
+}
+
+async function writeClipboardText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    let copied = false;
+    try {
+        copied = document.execCommand("copy");
+    } finally {
+        document.body.removeChild(textArea);
+    }
+
+    if (!copied) {
+        throw new Error("Copy command failed");
+    }
+
+    return true;
+}
+
+async function copyText(text, button) {
+    const originalText = button.innerText;
+
+    try {
+        await writeClipboardText(text);
+    } catch (error) {
+        button.innerText = "Copy failed";
+        setTimeout(() => {
+            button.innerText = originalText;
+        }, 1600);
+        return;
+    }
+
+    button.innerText = "Copied";
+    setTimeout(() => {
+        button.innerText = originalText;
+    }, 1200);
+}
+
+async function copyOutput() {
+    if (outputLines.length === 0) return;
+    await copyText(outputLines.join(""), copyOutputBtn);
+}
+
+runBtn.addEventListener("click", startScript);
+stopBtn.addEventListener("click", stopScript);
+sendBtn.addEventListener("click", sendAnswer);
+acceptBtn.addEventListener("click", acceptFinalOutput);
+copyOutputBtn.addEventListener("click", copyOutput);
+
+answerInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+        sendAnswer();
+    }
+});
+
+renderScripts();
+loadScripts();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+.venv
+.env
+saved_outputs/*
+__pycache__

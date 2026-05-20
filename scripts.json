@@ -1,0 +1,6 @@
+[
+    {
+        "name": "Server Check",
+        "location": "scripts/server_check.sh"
+    } 
+]

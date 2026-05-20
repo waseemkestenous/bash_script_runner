@@ -1,0 +1,171 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 700px;
+    margin: 40px auto;
+    background: white;
+    padding: 24px;
+    border-radius: 14px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+}
+
+h1 {
+    margin-top: 0;
+}
+
+.welcome {
+    color: #555;
+}
+
+.user-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: -6px 0 12px;
+    color: #475569;
+    font-size: 14px;
+}
+
+.user-line a {
+    color: #2563eb;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.script-picker {
+    display: grid;
+    gap: 8px;
+    margin: 18px 0 14px;
+}
+
+.script-picker label {
+    color: #374151;
+    font-weight: bold;
+}
+
+.script-picker select,
+.script-picker input {
+    padding: 11px 12px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: white;
+    color: #111827;
+    font: inherit;
+}
+
+.toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #2563eb;
+    color: white;
+    font-weight: bold;
+}
+
+button:disabled {
+    background: #999;
+    cursor: not-allowed;
+}
+
+button.danger {
+    background: #dc2626;
+}
+
+button.danger:disabled {
+    background: #999;
+}
+
+.chat-box {
+    margin-top: 20px;
+    height: 420px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 14px;
+    border-radius: 10px;
+    background: #fafafa;
+}
+
+.message {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    max-width: 85%;
+    white-space: pre-wrap;
+}
+
+.message.script {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    justify-content: space-between;
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.message-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.copy-response {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: #475569;
+    font-size: 12px;
+}
+
+.message.user {
+    background: #dbeafe;
+    color: #1e3a8a;
+    margin-left: auto;
+    text-align: right;
+}
+
+.message.system {
+    background: #fef3c7;
+    color: #92400e;
+    margin: 10px auto;
+    text-align: center;
+}
+
+.input-area {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.input-area input {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+.final-area {
+    margin-top: 16px;
+}
+
+.hidden {
+    display: none;
+}
+
+@media (max-width: 760px) {
+    .container {
+        width: auto;
+        margin: 20px;
+    }
+}
